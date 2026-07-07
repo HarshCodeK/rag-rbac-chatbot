@@ -78,6 +78,46 @@ The finance_team role has access to both "finance" and "general" collections. Th
 
 The guardrails layer detects that "weather" is a blocked topic keyword and returns a warning before any retrieval happens.
 
+### Scenario 4: PII in query (blocked)
+
+**Login:** hr_team
+**Question:** "My email is john@acme.com, what is the PTO policy?"
+**Result:** "I can't process requests containing personal information."
+
+The guardrails layer detects the email address pattern and blocks the request before any retrieval or LLM call occurs, preventing personal data from reaching the logs.
+
+### Scenario 5: HR team asks about 401k match (answered)
+
+**Login:** hr_team
+**Question:** "What is the 401k match policy?"
+**Result:** "The company matches 50% of contributions up to 6% of salary."
+
+The hr_team role has access to "human_resources" and "general" collections. The payroll policy document in human_resources contains the 401k details and is retrieved successfully.
+
+### Scenario 6: C-level asks about marketing spend (answered)
+
+**Login:** c_level
+**Question:** "How much did we spend on Google Ads?"
+**Result:** "We spent $520,000 on Google Ads in Q3."
+
+The c_level role has the broadest access — all three collections. The marketing expenses document in the finance collection contains the Google Ads figure and is retrieved.
+
+### Scenario 7: Finance team asks about PTO policy (denied)
+
+**Login:** finance_team
+**Question:** "How many PTO days do employees get?"
+**Result:** "I don't have access to information that would answer that."
+
+The finance_team role does not have access to the "human_resources" collection where the employee handbook lives. The retrieval finds nothing relevant, and the request is denied at the retrieval layer.
+
+### Scenario 8: Employee asks about company founding (answered from general)
+
+**Login:** employee
+**Question:** "When was Acme Corp founded?"
+**Result:** "Acme Corp was founded in 2014 by Sarah Chen and Michael Torres."
+
+Employees only have access to the "general" collection, but the company overview document contains founding details. The retrieval finds a match and the LLM answers correctly.
+
 ## What I'd add next
 
 - **Real PII redaction:** The current guardrails only detect PII and block the query entirely. A better approach would be to redact PII tokens from the query (replacing emails with `[REDACTED]`) so legitimate questions that happen to contain personal info can still be answered safely.

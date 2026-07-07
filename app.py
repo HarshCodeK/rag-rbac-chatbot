@@ -26,6 +26,16 @@ with st.sidebar:
 
     st.caption(f"Logged in as: **{st.session_state.role}**")
 
+    role_files = {
+        "finance_team": ["finance/q3_report.txt", "finance/marketing_expenses.txt", "general/company_overview.txt"],
+        "hr_team": ["human_resources/employee_handbook.txt", "human_resources/payroll_policy.txt", "general/company_overview.txt"],
+        "c_level": ["finance/q3_report.txt", "finance/marketing_expenses.txt", "human_resources/employee_handbook.txt", "human_resources/payroll_policy.txt", "general/company_overview.txt"],
+        "employee": ["general/company_overview.txt"],
+    }
+    with st.expander("Accessible Files"):
+        for f in role_files.get(st.session_state.role, []):
+            st.markdown(f"- `{f}`")
+
     with st.expander("Admin: Recent Queries"):
         logs = get_recent_logs(10)
         if logs:
