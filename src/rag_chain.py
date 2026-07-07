@@ -1,23 +1,33 @@
+import time
 import chromadb
 from sentence_transformers import SentenceTransformer
 from src.config import EMBEDDING_MODEL, CHROMA_DB_PATH, call_llm
 from src.rbac import get_allowed_collections
 from src.guardrails import contains_pii, is_out_of_scope
+from src.monitor import log_interaction
 
 
 def answer_query(query: str, role: str) -> dict:
+    start = time.time()
+
     if contains_pii(query):
-        return {
+        latency_ms = (time.time() - start) * 1000
+        result = {
             "answer": "I can't process requests containing personal information.",
             "blocked": True,
             "reason": "pii",
         }
+        log_interaction(role, query, result["answer"], True, "pii", latency_ms)
+        return result
     if is_out_of_scope(query):
-        return {
+        latency_ms = (time.time() - start) * 1000
+        result = {
             "answer": "That's outside what I can help with. Please ask about company information.",
             "blocked": True,
             "reason": "out_of_scope",
         }
+        log_interaction(role, query, result["answer"], True, "out_of_scope", latency_ms)
+        return result
 
     allowed_collections = get_allowed_collections(role)
     client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
@@ -44,11 +54,14 @@ def answer_query(query: str, role: str) -> dict:
                 sources.append(coll_name)
 
     if not all_chunks:
-        return {
+        latency_ms = (time.time() - start) * 1000
+        result = {
             "answer": "I don't have access to information that would answer that.",
             "blocked": False,
             "reason": "no_access",
         }
+        log_interaction(role, query, result["answer"], False, "no_access", latency_ms)
+        return result
 
     context = "\n\n".join(all_chunks)
     system_prompt = (
@@ -57,9 +70,12 @@ def answer_query(query: str, role: str) -> dict:
     )
     user_prompt = f"Context:\n{context}\n\nQuestion: {query}"
     llm_response = call_llm(user_prompt, system_prompt=system_prompt)
-    return {
+    latency_ms = (time.time() - start) * 1000
+    result = {
         "answer": llm_response,
         "blocked": False,
         "sources": sources,
         "reason": None,
     }
+    log_interaction(role, query, result["answer"], False, None, latency_ms)
+    return result
