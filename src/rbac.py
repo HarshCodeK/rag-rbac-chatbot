@@ -1,7 +1,7 @@
 ROLE_ACCESS_MAP = {
     "finance_team": ["finance", "general"],
-    "hr_team": ["hr", "general"],
-    "c_level": ["finance", "hr", "general"],
+    "hr_team": ["human_resources", "general"],
+    "c_level": ["finance", "human_resources", "general"],
     "employee": ["general"],
 }
 

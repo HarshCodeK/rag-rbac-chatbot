@@ -8,7 +8,7 @@ GROQ_MODEL = "llama-3.3-70b-versatile"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 CHROMA_DB_PATH = "./chroma_db"
 DATA_DIR = "data"
-COLLECTIONS = ["finance", "hr", "general"]
+COLLECTIONS = ["finance", "human_resources", "general"]
 
 
 def call_llm(prompt: str, system_prompt: str = "") -> str:
