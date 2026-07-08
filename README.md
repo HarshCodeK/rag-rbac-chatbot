@@ -1,7 +1,5 @@
 # RAG-RBAC Chatbot
 
-![Project Screenshot](../image.png)
-
 An internal company chatbot that answers questions from private company documents, restricts what each user can see based on their role (RBAC), and blocks PII leakage and off-topic questions.
 
 ## Why RBAC matters for RAG systems
