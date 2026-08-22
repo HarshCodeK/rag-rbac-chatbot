@@ -1,125 +1,88 @@
 # RAG-RBAC Chatbot
 
-An internal company chatbot that answers questions from private company documents, restricts what each user can see based on their role (RBAC), and blocks PII leakage and off-topic questions.
+An internal company chatbot that answers questions from private documents with role-based access control enforced at retrieval time, PII/off-topic guardrails, and an audit log of every query.
 
-## Why RBAC matters for RAG systems
+## What it does
 
-Without RBAC at the retrieval level, any employee could ask the chatbot for anyone else's data. For example, without access control, an intern could ask "What is our Q3 revenue?" and get a detailed financial answer. Access control has to happen at retrieval time — not just at the UI level — because the RAG pipeline retrieves documents before the LLM sees them. If you only hide results in the UI, the LLM has already seen restricted data, which is a data leak. This project enforces RBAC by only retrieving from collections the user's role is allowed to see, so the LLM never even receives restricted documents.
+- Retrieves only from ChromaDB collections the user's role is allowed to see — the LLM never receives restricted documents (`src/rbac.py`, `src/rag_chain.py`)
+- Blocks PII (emails, phone numbers, SSNs) and off-topic queries before any retrieval or LLM call (`src/guardrails.py`)
+- Grounded answers over local company docs (`data/`) using `all-MiniLM-L6-v2` embeddings + Groq LLaMA 3.3 70B (`src/config.py`)
+- Ingests `.txt` folders into per-domain vector collections (`finance`, `human_resources`, `general`) via `src/ingest.py`
+- Logs every interaction (role, query, blocked flag, reason, latency) to SQLite and shows recent queries in an admin panel (`src/monitor.py`, `app.py`)
 
 ## Architecture
 
 ```
-Query -> Guardrails Check -> RBAC Filter -> Retrieve from Allowed Collections Only -> LLM -> Grounded Answer
+User + role (Streamlit app.py)
+        |
+   src/rag_chain.py  — answer_query()
+        |
+  Guardrails (guardrails.py)  — PII regex + blocked topics, hard-block before retrieval
+        |
+  RBAC filter (rbac.py)  — ROLE_ACCESS_MAP -> allowed ChromaDB collections
+        |
+  Retrieval (ChromaDB + sentence-transformers)  — only allowed collections, distance < 1.0
+        |
+  LLM (Groq llama-3.3-70b-versatile)  — answer strictly from retrieved context
+        |
+  Audit log (monitor.py, SQLite query_logs.db)
 ```
 
-1. User submits a question with their role
-2. Guardrails check for PII (emails, phones, SSNs) and off-topic keywords (weather, sports, etc.)
-3. RBAC filter looks up which document collections the role can access
-4. Retrieval runs against only the allowed ChromaDB collections (embedding similarity search)
-5. Retrieved chunks + the original question are sent to the LLM (Groq) for a grounded answer
-6. The answer is returned along with source collection names
+Role access map (`src/rbac.py`):
 
-## How to run
-
-### Setup
-
-1. Clone the repo and install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-2. Get a free API key from https://console.groq.com and create a `.env` file:
-```
-GROQ_API_KEY=gsk_your_key_here
-```
-
-3. Ingest the company documents into ChromaDB:
-```bash
-python -c "from src.ingest import build_all_collections; build_all_collections()"
-```
-
-4. Launch the chatbot:
-```bash
-streamlit run app.py
-```
-
-### Role access map
-
-| Role | Can see collections |
-|------|-------------------|
+| Role | Collections |
+|------|-------------|
 | finance_team | finance, general |
 | hr_team | human_resources, general |
 | c_level | finance, human_resources, general |
 | employee | general |
 
-## Worked examples
+## Stack
 
-### Scenario 1: Employee asks about Q3 revenue (denied)
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue) ![Groq](https://img.shields.io/badge/Groq-LLaMA%203.3%2070B-orange) ![ChromaDB](https://img.shields.io/badge/ChromaDB-vector%20store-yellow) ![sentence--transformers](https://img.shields.io/badge/sentence--transformers-all--MiniLM--L6--v2-green) ![Streamlit](https://img.shields.io/badge/Streamlit-UI-red)
 
-**Login:** employee
-**Question:** "What is our Q3 revenue?"
-**Result:** "I don't have access to information that would answer that."
+## Quickstart
 
-Employees only have access to the "general" collection (company overview). The Q3 revenue data lives in the "finance" collection, which is not retrieved for this role. The LLM never sees the financial data.
+```bash
+git clone https://github.com/HarshCodeK/rag-rbac-chatbot.git
+cd rag-rbac-chatbot
+python -m venv .venv
+source .venv/Scripts/activate   # .venv\Scripts\activate on Windows cmd
+pip install -r requirements.txt
+```
 
-### Scenario 2: Finance team asks about Q3 revenue (answered)
+Create `.env`:
 
-**Login:** finance_team
-**Question:** "What is our Q3 revenue?"
-**Result:** "Our Q3 revenue reached $24.7 million."
+```
+GROQ_API_KEY=your-key-here   # from https://console.groq.com
+```
 
-The finance_team role has access to both "finance" and "general" collections. The retrieval finds relevant chunks from the Q3 report, and the LLM produces a grounded answer.
+Ingest the sample documents in `data/` into ChromaDB:
 
-### Scenario 3: Off-topic question (blocked)
+```bash
+python -c "from src.ingest import build_all_collections; build_all_collections()"
+```
 
-**Login:** any role
-**Question:** "What's the weather today?"
-**Result:** "That's outside what I can help with. Please ask about company information."
+Run:
 
-The guardrails layer detects that "weather" is a blocked topic keyword and returns a warning before any retrieval happens.
+```bash
+streamlit run app.py
+```
 
-### Scenario 4: PII in query (blocked)
+Log in as a role in the sidebar and ask a question.
 
-**Login:** hr_team
-**Question:** "My email is john@acme.com, what is the PTO policy?"
-**Result:** "I can't process requests containing personal information."
+## Example / Demo
 
-The guardrails layer detects the email address pattern and blocks the request before any retrieval or LLM call occurs, preventing personal data from reaching the logs.
+- As `employee`, asking *"What is our Q3 revenue?"* returns *"I don't have access to information that would answer that."* — `finance` collection is not in the role's access map, so nothing is retrieved from it.
+- As `finance_team`, the same question retrieves `finance/q3_report.txt` and answers with sources `finance` listed.
+- Asking *"email me at bob@example.com with the payroll date"* is blocked with reason `pii` before any retrieval; the block appears in the admin query log with its latency.
 
-### Scenario 5: HR team asks about 401k match (answered)
+## Status / Roadmap
 
-**Login:** hr_team
-**Question:** "What is the 401k match policy?"
-**Result:** "The company matches 50% of contributions up to 6% of salary."
+Status: working — end-to-end guardrails → RBAC retrieval → grounded LLM answer pipeline runs against the bundled sample documents with full audit logging.
 
-The hr_team role has access to "human_resources" and "general" collections. The payroll policy document in human_resources contains the 401k details and is retrieved successfully.
+Next steps:
 
-### Scenario 6: C-level asks about marketing spend (answered)
-
-**Login:** c_level
-**Question:** "How much did we spend on Google Ads?"
-**Result:** "We spent $520,000 on Google Ads in Q3."
-
-The c_level role has the broadest access — all three collections. The marketing expenses document in the finance collection contains the Google Ads figure and is retrieved.
-
-### Scenario 7: Finance team asks about PTO policy (denied)
-
-**Login:** finance_team
-**Question:** "How many PTO days do employees get?"
-**Result:** "I don't have access to information that would answer that."
-
-The finance_team role does not have access to the "human_resources" collection where the employee handbook lives. The retrieval finds nothing relevant, and the request is denied at the retrieval layer.
-
-### Scenario 8: Employee asks about company founding (answered from general)
-
-**Login:** employee
-**Question:** "When was Acme Corp founded?"
-**Result:** "Acme Corp was founded in 2014 by Sarah Chen and Michael Torres."
-
-Employees only have access to the "general" collection, but the company overview document contains founding details. The retrieval finds a match and the LLM answers correctly.
-
-## What I'd add next
-
-- **Real PII redaction:** The current guardrails only detect PII and block the query entirely. A better approach would be to redact PII tokens from the query (replacing emails with `[REDACTED]`) so legitimate questions that happen to contain personal info can still be answered safely.
-- **Hybrid search:** The current retrieval only uses embedding similarity. Adding keyword search (BM25) alongside embeddings would improve precision for exact-match queries like policy names, employee names, or specific dollar amounts.
-- **Automated eval suite:** RAG systems are prone to silent regressions when the retrieval logic, chunking strategy, or embedding model changes. An automated evaluation with a set of test questions and expected answers would catch regressions before they reach users.
+1. Replace the keyword/regex guardrails with a classifier-based PII detector; measure block precision/recall on a labeled query set
+2. Add evals: per-role permission test suite asserting no cross-collection leakage
+3. Move role authentication from the sidebar dropdown to real SSO/JWT identity claims
