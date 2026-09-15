@@ -1,3 +1,5 @@
+> **Archived 2026-09.** A learning slice: practice in retrieval with role-based access control, built in a single session. Superseded by [regent](https://github.com/HarshCodeK/regent) - the AI control plane, where the same pipeline idea now has tests, CI, an append-only ledger and measured numbers. Kept for history, not presented as portfolio work.
+
 # RAG-RBAC Chatbot
 
 An internal company chatbot that answers questions from private documents with role-based access control enforced at retrieval time, PII/off-topic guardrails, and an audit log of every query.
